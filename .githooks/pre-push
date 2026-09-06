@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# 普通 git push 一律拒绝。bot:push 只在它启动的那一次 git 进程中设置此变量，
+# 并同时注入短期 GitHub App installation token。
+if [ "${GITHUB_APP_PUSH_AUTHORIZED:-}" = "1" ]; then
+  bun run privacy:check || exit 1
+  exit 0
+fi
+
+cat >&2 <<'EOF'
+Push 已阻止：这个仓库必须通过 GitHub App bot 推送。
+
+请使用：
+  bun run bot:push
+
+pre-push hook 执行前 Git 已经开始远端认证，因此 hook 本身不能替换凭据。
+bot:push 会提供短期 App token，并且只为该次 push 临时放行 hook。
+EOF
+exit 1

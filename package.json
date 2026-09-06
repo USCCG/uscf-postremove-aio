@@ -1,0 +1,29 @@
+{
+  "name": "uscf-postremove-aio",
+  "private": true,
+  "scripts": {
+    "build": "bun run scripts/build-userscript.ts",
+    "build:userscript": "bun run scripts/build-userscript.ts",
+    "bot:setup": "bun run scripts/bot-push.ts --setup-only",
+    "bot:push": "bun run scripts/bot-push.ts",
+    "typecheck": "bun ./node_modules/typescript/bin/tsc -p tsconfig.json",
+    "lint": "bun ./node_modules/eslint/bin/eslint.js src scripts",
+    "lint:fix": "bun ./node_modules/eslint/bin/eslint.js src scripts --fix",
+    "privacy:check": "bun run scripts/check-privacy.ts",
+    "format": "bun ./node_modules/prettier/bin/prettier.cjs --write .",
+    "format:check": "bun ./node_modules/prettier/bin/prettier.cjs --check .",
+    "check": "bun run format:check && bun run lint && bun run typecheck && bun run privacy:check",
+    "check:userscript": "bun run check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/bun": "latest",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.69.0"
+  }
+}
