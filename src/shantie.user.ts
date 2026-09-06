@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         USCardForum 帖子管理器
 // @namespace    https://www.uscardforum.com/
-// @version      1.0.2
+// @version      1.0.3
 // @description  统一获取、审核、删除、发帖拦截与新帖记录
 // @author       Codex
 // @match        *://www.uscardforum.com/*

@@ -41,6 +41,10 @@ jobs:
       - name: 确认提交的构建产物是最新的
         run: git diff --exit-code -- dist/shantie.user.js
 
+      - name: 确认 tag 与 userscript 版本一致
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: grep -Fq "@version      ${GITHUB_REF_NAME#v}" dist/shantie.user.js
+
       - name: 上传 userscript 构建产物
         uses: actions/upload-artifact@v7
         with:
@@ -67,6 +71,7 @@ jobs:
         run: >-
           gh release create "$GITHUB_REF_NAME"
           release/shantie.user.js
+          --repo "$GITHUB_REPOSITORY"
           --verify-tag
           --generate-notes
           --title "$GITHUB_REF_NAME"
