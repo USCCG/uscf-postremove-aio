@@ -1,4 +1,5 @@
 import type { 设置 } from "./类型";
+import { 默认标题编辑脚本文本, 默认编辑脚本文本 } from "./默认编辑脚本.js";
 
 export const 脚本名称 = "USCardForum 帖子管理器";
 export const 设置存储键 = "shantie-v3-settings";
@@ -13,7 +14,12 @@ export const 默认设置: 设置 = {
   singleDelayMs: 60_000,
   batchDelayMs: 5_000,
   batchSize: 50,
+  editDelayMs: 1_000,
+  editScript: 默认编辑脚本文本,
+  topicTitleScript: 默认标题编辑脚本文本,
   fetchDelayMs: 500,
+  fetchType: "全部",
+  fetchTarget: "待定",
   fetchMinId: "",
   fetchMaxId: "",
 };

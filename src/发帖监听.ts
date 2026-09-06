@@ -110,6 +110,7 @@ async function 解析并记录发帖响应(文本Promise: Promise<string>): Prom
       topicTitle: "",
       topicSlug: String(帖子?.topic_slug ?? ""),
       postNumber: Number(帖子?.post_number) || undefined,
+      recordType: Number(帖子?.post_number) === 1 ? "话题" : "回帖",
       createdAt: String(帖子?.created_at ?? ""),
       postUrl: String(帖子?.post_url ?? ""),
       status: "待定",

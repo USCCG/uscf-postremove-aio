@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         USCardForum 帖子管理器
 // @namespace    https://www.uscardforum.com/
-// @version      1.0.3
-// @description  统一获取、审核、删除、发帖拦截与新帖记录
+// @version      1.2.0
+// @description  统一获取、沉浸审核、批量编辑、删除、发帖拦截与新帖记录
 // @author       Codex
 // @match        *://www.uscardforum.com/*
 // @match        *://uscardforum.com/*

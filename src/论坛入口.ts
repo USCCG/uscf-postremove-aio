@@ -21,10 +21,14 @@ export function 初始化论坛入口(初始用户名 = ""): 论坛入口控制�
 
   const 刷新 = async (): Promise<void> => {
     if (!用户名) return;
-    const [待定, 待删] = await Promise.all([读取帖子(用户名, "待定"), 读取帖子(用户名, "待删除")]);
-    根.querySelector<HTMLElement>(".count")!.textContent = String(待定.length + 待删.length);
+    const [待定, 待编辑, 待删] = await Promise.all([
+      读取帖子(用户名, "待定"),
+      读取帖子(用户名, "待编辑"),
+      读取帖子(用户名, "待删除"),
+    ]);
+    根.querySelector<HTMLElement>(".count")!.textContent = String(待定.length + 待编辑.length + 待删.length);
     根.querySelector<HTMLElement>(".dot")!.className = `dot ${读取设置().blockPosting ? "blocked" : "ready"}`;
-    按钮.title = `待定 ${待定.length} · 待删 ${待删.length}${读取设置().blockPosting ? " · 已拦截发帖" : ""}`;
+    按钮.title = `待定 ${待定.length} · 待编辑 ${待编辑.length} · 待删 ${待删.length}${读取设置().blockPosting ? " · 已拦截发帖" : ""}`;
   };
   监听数据变化(() => void 刷新());
   window.addEventListener("storage", () => void 刷新());

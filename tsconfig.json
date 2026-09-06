@@ -6,9 +6,11 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "types": ["bun"],
     "strict": true,
+    "allowJs": true,
+    "checkJs": true,
     "skipLibCheck": true,
     "noEmit": true,
     "allowImportingTsExtensions": false
   },
-  "include": ["./src/**/*.ts", "./scripts/**/*.ts"]
+  "include": ["./src/**/*.ts", "./src/**/*.js", "./scripts/**/*.ts"]
 }

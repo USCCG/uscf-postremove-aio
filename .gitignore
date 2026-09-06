@@ -1,6 +1,7 @@
 # 依赖与临时文件
 node_modules/
 *.log
+dist/
 
 # 本机配置和 GitHub App 密钥
 .env

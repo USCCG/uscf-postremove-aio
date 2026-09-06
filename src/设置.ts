@@ -12,7 +12,15 @@ export function 读取设置(): 设置 {
       singleDelayMs: 数值限制(数据.singleDelayMs, 默认设置.singleDelayMs, 5_000, 86_400_000),
       batchDelayMs: 数值限制(数据.batchDelayMs, 默认设置.batchDelayMs, 1_000, 86_400_000),
       batchSize: 数值限制(数据.batchSize, 默认设置.batchSize, 2, 100),
+      editDelayMs: 数值限制(数据.editDelayMs, 默认设置.editDelayMs, 500, 86_400_000),
+      editScript: typeof 数据.editScript === "string" && 数据.editScript.trim() ? 数据.editScript : 默认设置.editScript,
+      topicTitleScript:
+        typeof 数据.topicTitleScript === "string" && 数据.topicTitleScript.trim()
+          ? 数据.topicTitleScript
+          : 默认设置.topicTitleScript,
       fetchDelayMs: 数值限制(数据.fetchDelayMs, 默认设置.fetchDelayMs, 0, 60_000),
+      fetchType: 数据.fetchType === "回帖" || 数据.fetchType === "话题" ? 数据.fetchType : "全部",
+      fetchTarget: 数据.fetchTarget === "待编辑" ? "待编辑" : "待定",
       fetchMinId: typeof 数据.fetchMinId === "string" ? 数据.fetchMinId : "",
       fetchMaxId: typeof 数据.fetchMaxId === "string" ? 数据.fetchMaxId : "",
     };

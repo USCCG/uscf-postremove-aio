@@ -1,6 +1,9 @@
-export type 帖子状态 = "待定" | "待删除" | "保留" | "已删除" | "失败";
+export type 帖子状态 = "待定" | "待编辑" | "待删除" | "保留" | "已编辑" | "已删除" | "编辑失败" | "失败";
 export type 帖子来源 = "同步" | "发帖监听" | "手动" | "旧队列";
 export type 删帖方式 = "逐帖" | "批量";
+export type 帖子种类 = "回帖" | "话题";
+export type 同步类型 = 帖子种类 | "全部";
+export type 同步目标 = "待定" | "待编辑";
 
 export interface 帖子记录 {
   key: string;
@@ -13,6 +16,9 @@ export interface 帖子记录 {
   topicTitle: string;
   topicSlug: string;
   postNumber?: number;
+  recordType?: 帖子种类;
+  categoryId?: number;
+  tags?: string[];
   createdAt: string;
   postUrl: string;
   status: 帖子状态;
@@ -38,7 +44,12 @@ export interface 设置 {
   singleDelayMs: number;
   batchDelayMs: number;
   batchSize: number;
+  editDelayMs: number;
+  editScript: string;
+  topicTitleScript: string;
   fetchDelayMs: number;
+  fetchType: 同步类型;
+  fetchTarget: 同步目标;
   fetchMinId: string;
   fetchMaxId: string;
 }
@@ -52,6 +63,8 @@ export interface 用户动态 {
   title?: string;
   slug?: string;
   post_number?: number;
+  category_id?: number;
+  tags?: string[];
   [key: string]: unknown;
 }
 
@@ -82,4 +95,32 @@ export interface 删帖结果 {
   status: number;
   message: string;
   waitMs?: number;
+}
+
+export type 完整帖子JSON = Record<string, unknown> & {
+  id?: number;
+  raw?: string;
+  cooked?: string;
+  topic_id?: number;
+  topic_slug?: string;
+  post_number?: number;
+  reply_to_post_number?: number | null;
+};
+
+export type 完整话题JSON = Record<string, unknown> & {
+  id?: number;
+  title?: string;
+  slug?: string;
+  category_id?: number;
+  tags?: unknown[];
+};
+
+export interface 编辑预览 {
+  帖子: 帖子记录;
+  完整数据: 完整帖子JSON;
+  原文: string;
+  新文: string;
+  完整话题数据?: 完整话题JSON;
+  原标题?: string;
+  新标题?: string;
 }

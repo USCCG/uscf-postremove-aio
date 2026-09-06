@@ -2,8 +2,9 @@
   "name": "uscf-postremove-aio",
   "private": true,
   "scripts": {
-    "build": "bun run scripts/build-userscript.ts",
-    "build:userscript": "bun run scripts/build-userscript.ts",
+    "build": "bun run scripts/build-userscript.ts && bun run syntax:check",
+    "build:userscript": "bun run scripts/build-userscript.ts && bun run syntax:check",
+    "syntax:check": "bun run scripts/check-built-syntax.ts",
     "bot:setup": "bun run scripts/bot-push.ts --setup-only",
     "bot:push": "bun run scripts/bot-push.ts",
     "typecheck": "bun ./node_modules/typescript/bin/tsc -p tsconfig.json",

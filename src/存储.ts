@@ -43,7 +43,7 @@ export async function 保存帖子(新记录: 新帖子记录, 保留已有决�
   return 记录;
 }
 
-export async function 批量保存帖子(记录列表: 新帖子记录[]): Promise<number> {
+export async function 批量保存帖子(记录列表: 新帖子记录[], 保留已有决定 = true): Promise<number> {
   if (!记录列表.length) return 0;
   const db = await 获取数据库();
   const 读事务 = db.transaction(帖子表, "readonly");
@@ -62,8 +62,8 @@ export async function 批量保存帖子(记录列表: 新帖子记录[]): Promi
       ...旧记录,
       ...新记录,
       key,
-      status: 旧记录?.status ?? 新记录.status,
-      lastError: 旧记录?.lastError ?? 新记录.lastError,
+      status: 保留已有决定 ? (旧记录?.status ?? 新记录.status) : 新记录.status,
+      lastError: 保留已有决定 ? (旧记录?.lastError ?? 新记录.lastError) : 新记录.lastError,
       updatedAt: Date.now(),
     });
   }
@@ -99,6 +99,30 @@ export async function 更新帖子状态(用户名: string, ids: number[], 状�
   const 写事务 = db.transaction(帖子表, "readwrite");
   const 写表 = 写事务.objectStore(帖子表);
   for (const 记录 of 记录列表) if (记录) 写表.put({ ...记录, status: 状态, lastError: 错误, updatedAt: Date.now() });
+  await 事务完成(写事务);
+  通知数据变化();
+}
+
+export async function 更新帖子内容(
+  用户名: string,
+  id: number,
+  变更: { raw: string; cooked?: string; topicTitle?: string; status: 帖子状态; lastError?: string },
+): Promise<void> {
+  const db = await 获取数据库();
+  const key = 帖子键(用户名, id);
+  const 读事务 = db.transaction(帖子表, "readonly");
+  const 记录 = (await 请求转Promise(读事务.objectStore(帖子表).get(key))) as 帖子记录 | undefined;
+  if (!记录) return;
+  const 写事务 = db.transaction(帖子表, "readwrite");
+  写事务.objectStore(帖子表).put({
+    ...记录,
+    raw: 变更.raw,
+    cooked: 变更.cooked ?? 记录.cooked,
+    topicTitle: 变更.topicTitle ?? 记录.topicTitle,
+    status: 变更.status,
+    lastError: 变更.lastError ?? "",
+    updatedAt: Date.now(),
+  });
   await 事务完成(写事务);
   通知数据变化();
 }

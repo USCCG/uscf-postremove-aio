@@ -1,6 +1,6 @@
 # USCardForum 帖子管理器
 
-一个模块化 userscript，统一管理帖子获取、人工审核、逐帖/批量删除、发帖拦截和新帖自动记录。
+一个模块化 userscript，统一管理历史回帖/话题获取、普通/沉浸审核、正文与话题标题批量编辑、逐帖/批量删除、发帖拦截和新帖自动记录。
 
 ## 开发
 
@@ -18,6 +18,7 @@ bun run lint:fix     # 自动修复可修复的 lint 问题
 bun run format       # Prettier 格式化
 bun run format:check # 只检查格式
 bun run typecheck    # TypeScript 类型检查
+bun run syntax:check # 用 Bun 解析构建产物但不执行
 ```
 
 `bun run check` 会依次执行 Prettier、ESLint 和 TypeScript 检查。
@@ -30,6 +31,40 @@ bun run typecheck    # TypeScript 类型检查
 ## 界面
 
 论坛页面只显示一个小型“帖子管理”入口。点击后打开同源的独立管理标签页，完整设置、审核、队列和日志都在该页中。
+
+每条待定帖子都可以标记为“编辑”“删除”或“保留”。保留、编辑队列和删除队列中的帖子仍可随时改选；“沉浸审核”每次只显示一条帖子和三个决定按钮。
+
+## 批量编辑
+
+“编辑队列”页接受两个 JavaScript 函数。正文函数对回帖和话题首帖都会运行：
+
+```js
+(orig_post_full_json) => {
+  const 原文 = String(orig_post_full_json.raw ?? "");
+  return 原文.replaceAll("旧内容", "新内容");
+};
+```
+
+话题标题函数仅对话题首帖运行：
+
+```js
+(orig_topic_full_json) => {
+  const 原标题 = String(orig_topic_full_json.title ?? "");
+  return 原标题.replaceAll("旧标题", "新标题");
+};
+```
+
+脚本会为每条待编辑帖子获取 `/posts/:id` 的完整对象，并把正文函数返回的字符串作为新 Markdown，通过 `PUT /posts/:id` 提交。表单字段按照浏览器 HAR 构造：`post[raw]`、`post[topic_id]`、`post[edit_reason]`、`post[locale]`，并将 `post[original_text]` 固定为空字符串。
+
+对于话题首帖，还会获取 `/t/:topic_id.json`，并通过 `PUT /t/:slug/:topic_id` 提交标题、原始标题、标签和分类。两个默认脚本都位于 `src/默认编辑脚本.js`，默认保持原内容不变；管理页支持同时预览正文和标题结果，再启动整个编辑队列。
+
+这是一个刻意开放的高级接口：粘贴的代码与 userscript 拥有相同页面权限。只运行你自己编写或完整审阅过的脚本。
+
+## 获取历史内容
+
+“获取帖子”页可以选择仅回帖、仅话题或两者都获取。回帖使用 Discourse user action `reply (5)`，话题使用 `new_topic (4)`；历史话题以首帖形式进入统一队列，因此可以使用同一套编辑、删除和保留操作。
+
+获取结果既可以进入待定审核，也可以直接加入编辑队列。后者是明确的批量重排操作，会把本次获取到的已有记录重新标记为待编辑；需要批量修改旧话题时，选择“仅话题 + 直接加入编辑队列”即可。
 
 ## 使用 GitHub App bot 推送
 
