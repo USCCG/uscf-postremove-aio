@@ -120,7 +120,7 @@ bun run bot:push
 
 需要传递 Git push 选项时，可追加在命令后，例如 `bun run bot:push -- --dry-run`。`.env`、`.secret` 和 PEM 私钥都已被 `.gitignore` 排除。
 
-`bun run privacy:check` 会扫描所有 Git 跟踪文件和当前分支的完整 commit 历史，拒绝私钥、GitHub token、凭据 URL、个人主目录、非公开邮箱以及非 bot 的 commit 身份。该检查同时在 `bun run check`、pre-push hook 和 GitHub Actions 中执行。
+`bun run privacy:check` 会扫描所有 Git 跟踪文件和当前分支的完整 commit 历史，拒绝私钥、GitHub token、凭据 URL、个人主目录和 Gmail 地址。其他邮箱域名可以使用；如果邮箱以 `users.noreply.github.com` 结尾，则姓名和邮箱身份必须属于 `wlf-bot`。该检查同时在 `bun run check`、pre-push hook 和 GitHub Actions 中执行。
 
 ## 自动构建
 
