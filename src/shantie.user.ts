@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         USCardForum 帖子管理器
 // @namespace    https://www.uscardforum.com/
-// @version      1.2.0
+// @version      1.3.0
 // @description  统一获取、沉浸审核、批量编辑、删除、发帖拦截与新帖记录
 // @author       Codex
 // @match        *://www.uscardforum.com/*
 // @match        *://uscardforum.com/*
 // @grant        unsafeWindow
+// @grant        GM_xmlhttpRequest
+// @connect      *
 // @inject-into  page
 // @sandbox      raw
 // @run-at       document-start
@@ -18,6 +20,7 @@ import { 获取当前用户名, type 页面窗口 } from "./会话";
 import { 迁移旧删帖队列 } from "./迁移";
 import { 启动管理页 } from "./管理页";
 import { 初始化论坛入口 } from "./论坛入口";
+import { 写日志, 清理无效帖子 } from "./存储";
 
 declare const unsafeWindow: 页面窗口 | undefined;
 
@@ -51,6 +54,8 @@ async function 初始化(): Promise<void> {
       return;
     }
     await 迁移旧删帖队列(用户名);
+    const 已清理数量 = await 清理无效帖子(用户名);
+    if (已清理数量) await 写日志(用户名, `已清理 ${已清理数量} 条旧版话题同步产生的无效记录。`);
     if (是管理页) 启动管理页(用户名);
     else {
       入口?.设置用户名(用户名);

@@ -89,6 +89,19 @@ export async function 读取帖子(用户名: string, 状态?: 帖子状态): Pr
   });
 }
 
+/** 清理旧版话题同步把 null post_id 错误转换成 0 后留下的无效记录。 */
+export async function 清理无效帖子(用户名: string): Promise<number> {
+  const 无效记录 = (await 读取帖子(用户名)).filter((帖子) => !Number.isSafeInteger(帖子.id) || 帖子.id <= 0);
+  if (!无效记录.length) return 0;
+  const db = await 获取数据库();
+  const 事务 = db.transaction(帖子表, "readwrite");
+  const 表 = 事务.objectStore(帖子表);
+  for (const 帖子 of 无效记录) 表.delete(帖子.key);
+  await 事务完成(事务);
+  通知数据变化();
+  return 无效记录.length;
+}
+
 export async function 更新帖子状态(用户名: string, ids: number[], 状态: 帖子状态, 错误 = ""): Promise<void> {
   if (!ids.length) return;
   const db = await 获取数据库();

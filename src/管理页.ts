@@ -4,8 +4,9 @@ import { 编辑器, 编译编辑脚本, 预览编辑, type 编辑脚本组 } fro
 import { 保存设置, 读取设置 } from "./设置";
 import { 保存帖子, 写日志, 更新帖子状态, 监听数据变化, 读取帖子, 读取日志 } from "./存储";
 import { 同步所有帖子 } from "./帖子同步";
-import type { 同步目标, 同步类型, 帖子记录, 帖子状态, 设置 } from "./类型";
+import type { 审核顺序, 同步目标, 同步类型, 帖子记录, 帖子状态, 设置, 远程审核失败策略 } from "./类型";
 import { 去除HTML, 提取错误, 数值限制, 解析帖子编号, 转义HTML } from "./工具";
+import { 远程审核器, 远程审核提示词 } from "./远程审核";
 
 type 页签 = "review" | "focus" | "decided" | "edit" | "delete" | "sync" | "logs" | "settings";
 
@@ -33,6 +34,10 @@ export function 启动管理页(用户名: string): void {
     运行状态 = 消息;
     void 渲染();
   });
+  const 远程审核器实例 = new 远程审核器(用户名, (消息) => {
+    运行状态 = 消息;
+    void 渲染();
+  });
 
   监听数据变化(() => {
     if (刷新定时器 !== null) window.clearTimeout(刷新定时器);
@@ -47,8 +52,9 @@ export function 启动管理页(用户名: string): void {
       读取帖子(用户名),
       ["edit", "delete", "logs"].includes(当前页签) ? 读取日志(用户名) : Promise.resolve([]),
     ]);
+    const 设置 = 读取设置();
     const 分组 = (状态: 帖子状态): 帖子记录[] => 全部.filter((帖子) => 帖子.status === 状态);
-    const 待定 = 分组("待定");
+    const 待定 = 排序审核帖子(分组("待定"), 设置.reviewOrder);
     const 待删除 = 分组("待删除");
     const 待编辑 = 分组("待编辑");
     const 保留 = 分组("保留");
@@ -58,7 +64,6 @@ export function 启动管理页(用户名: string): void {
       .sort((左, 右) => 右.updatedAt - 左.updatedAt);
     const 编辑失败 = 分组("编辑失败");
     const 失败 = 分组("失败");
-    const 设置 = 读取设置();
     根.innerHTML = `
       <header class="topbar">
         <div><h1>${转义HTML(脚本名称)}</h1><p>${转义HTML(用户名)} · 已记录 ${全部.length} 条 · ${转义HTML(运行状态)}</p></div>
@@ -91,17 +96,17 @@ export function 启动管理页(用户名: string): void {
     日志: Awaited<ReturnType<typeof 读取日志>>,
     设置: 设置,
   ): string {
-    if (当前页签 === "review") return 渲染审核(待定);
-    if (当前页签 === "focus") return 渲染沉浸审核(待定);
+    if (当前页签 === "review") return 渲染审核(待定, 设置.reviewOrder);
+    if (当前页签 === "focus") return 渲染沉浸审核(待定, 设置.reviewOrder);
     if (当前页签 === "decided") return 渲染已处理(已处理);
     if (当前页签 === "edit") return 渲染编辑(待编辑, 编辑失败, 日志, 设置);
     if (当前页签 === "delete") return 渲染删帖(待删除, 失败, 日志, 设置);
     if (当前页签 === "sync") return 渲染同步(设置);
     if (当前页签 === "logs") return 渲染日志(日志);
-    return 渲染设置(设置);
+    return 渲染设置(设置, 待定.length);
   }
 
-  function 渲染审核(帖子: 帖子记录[]): string {
+  function 渲染审核(帖子: 帖子记录[], 顺序: 审核顺序): string {
     const 总页数 = Math.max(1, Math.ceil(帖子.length / 每页审核数));
     审核页码 = Math.min(审核页码, 总页数);
     const 起始 = (审核页码 - 1) * 每页审核数;
@@ -112,7 +117,7 @@ export function 启动管理页(用户名: string): void {
     const 待定内容 = 帖子.length
       ? `${分页}<div class="post-list">${本页帖子.map((项) => 帖子卡片(项)).join("")}</div>${分页}`
       : 空状态("没有待定帖子", "可以去“获取帖子”同步历史帖。之后的新发帖也会自动进入这里。");
-    return `<div class="section-head"><div><h2>待定审核</h2><p>按发布时间从新到旧；没有时间的手动 ID 按 post_id 从大到小。</p></div></div>${待定内容}`;
+    return `<div class="section-head"><div><h2>待定审核</h2><p>当前${顺序}；没有发布时间时使用 post_id 排序。</p></div>${渲染审核顺序选择(顺序)}</div>${待定内容}`;
   }
 
   function 渲染已处理(帖子: 帖子记录[]): string {
@@ -129,13 +134,13 @@ export function 启动管理页(用户名: string): void {
     return `<div class="section-head"><div><h2>已处理帖子</h2><p>保留和已编辑的帖子都可重新选择编辑、删除或保留。</p></div></div>${内容}`;
   }
 
-  function 渲染沉浸审核(帖子: 帖子记录[]): string {
+  function 渲染沉浸审核(帖子: 帖子记录[], 顺序: 审核顺序): string {
     const 当前帖子 = 帖子[0];
     if (!当前帖子)
       return `<div class="focus-shell">${空状态("待定队列已经审核完", "可以去“获取帖子”同步历史帖，或返回普通审核页查看保留项目。")}</div>`;
     const 内容 = 当前帖子.raw || 去除HTML(当前帖子.cooked) || "（未获取到内容）";
     return `<div class="focus-shell">
-      <div class="section-head"><div><h2>沉浸审核</h2><p>一次只处理一条；作出决定后自动显示下一条。还剩 ${帖子.length} 条。</p></div></div>
+      <div class="section-head"><div><h2>沉浸审核</h2><p>一次只处理一条；作出决定后按${顺序}显示下一条。还剩 ${帖子.length} 条。</p></div>${渲染审核顺序选择(顺序)}</div>
       <article class="post-card focus-card">
         <div class="post-meta"><a href="${转义HTML(当前帖子.postUrl || `/posts/${当前帖子.id}`)}" target="_blank" rel="noopener">#${当前帖子.id}</a><span>${转义HTML(当前帖子.topicTitle)}</span><time>${当前帖子.createdAt ? new Date(当前帖子.createdAt).toLocaleString() : ""}</time></div>
         <pre>${转义HTML(内容)}</pre>
@@ -219,17 +224,40 @@ export function 启动管理页(用户名: string): void {
   }
 
   function 渲染同步(设置: 设置): string {
-    return `<article class="card narrow"><h2>批量获取历史回帖和话题</h2><p>分别通过用户动态的 reply(5) 和 new_topic(4) 分页获取。话题以首帖进入统一队列；“进入待定”保留已有决定，“直接加入编辑”会把本次命中的记录重新排入编辑队列。</p>
-      <div class="form-row sync-form"><label>获取类型<select id="fetch-type"><option value="全部" ${设置.fetchType === "全部" ? "selected" : ""}>回帖和话题</option><option value="回帖" ${设置.fetchType === "回帖" ? "selected" : ""}>仅回帖</option><option value="话题" ${设置.fetchType === "话题" ? "selected" : ""}>仅话题</option></select></label><label>获取后操作<select id="fetch-target"><option value="待定" ${设置.fetchTarget === "待定" ? "selected" : ""}>进入待定审核</option><option value="待编辑" ${设置.fetchTarget === "待编辑" ? "selected" : ""}>直接加入编辑队列</option></select></label><label>最小 post_id（可空）<input id="fetch-min" type="number" value="${转义HTML(设置.fetchMinId)}"></label><label>最大 post_id（可空）<input id="fetch-max" type="number" value="${转义HTML(设置.fetchMaxId)}"></label><label>请求间隔<input id="fetch-delay" type="number" min="0" value="${设置.fetchDelayMs}"></label></div>
-      <div class="actions"><button class="primary" data-action="start-sync" ${同步控制器 ? "disabled" : ""}>开始获取</button><button data-action="stop-sync" ${同步控制器 ? "" : "disabled"}>停止</button></div></article>`;
+    const 有范围 = Boolean(设置.fetchMinId || 设置.fetchMaxId);
+    const 范围说明 = 有范围
+      ? `<p class="warning">当前启用了 post_id 范围：${转义HTML(设置.fetchMinId || "不限")} ～ ${转义HTML(设置.fetchMaxId || "不限")}。范围外的帖子不会进入队列。</p>`
+      : "";
+    return `<article class="card narrow"><h2>批量获取历史回帖和话题</h2><p>分别通过用户动态的 reply(5) 和 new_topic(4) 分页获取。话题以首帖进入统一队列；“新记录进入待定”不会覆盖已有的删除、编辑或保留决定。</p>
+      ${范围说明}
+      <div class="form-row sync-form"><label>获取类型<select id="fetch-type"><option value="全部" ${设置.fetchType === "全部" ? "selected" : ""}>回帖和话题</option><option value="回帖" ${设置.fetchType === "回帖" ? "selected" : ""}>仅回帖</option><option value="话题" ${设置.fetchType === "话题" ? "selected" : ""}>仅话题</option></select></label><label>获取后操作<select id="fetch-target"><option value="待定" ${设置.fetchTarget === "待定" ? "selected" : ""}>仅新记录进入待定（保留旧决定）</option><option value="重新待定" ${设置.fetchTarget === "重新待定" ? "selected" : ""}>命中记录全部重新进入待定</option><option value="待编辑" ${设置.fetchTarget === "待编辑" ? "selected" : ""}>命中记录全部加入编辑队列</option></select></label><label>最小 post_id（可空）<input id="fetch-min" type="number" value="${转义HTML(设置.fetchMinId)}"></label><label>最大 post_id（可空）<input id="fetch-max" type="number" value="${转义HTML(设置.fetchMaxId)}"></label><label>请求间隔<input id="fetch-delay" type="number" min="0" value="${设置.fetchDelayMs}"></label></div>
+      <div class="actions"><button class="primary" data-action="start-sync" ${同步控制器 ? "disabled" : ""}>开始获取</button><button data-action="stop-sync" ${同步控制器 ? "" : "disabled"}>停止</button><button data-action="clear-fetch-range" ${同步控制器 ? "disabled" : ""}>清空 ID 范围</button></div></article>`;
   }
 
   function 渲染日志(日志: Awaited<ReturnType<typeof 读取日志>>): string {
     return `<div class="section-head"><div><h2>最近日志</h2><p>最新的 200 条。</p></div></div><div class="logs">${日志.map((项) => `<div class="log ${项.level}"><time>${new Date(项.time).toLocaleString()}</time><span>${转义HTML(项.message)}</span></div>`).join("") || 空状态("暂无日志", "")}</div>`;
   }
 
-  function 渲染设置(设置: 设置): string {
-    return `<article class="card narrow"><h2>发帖保护</h2><label class="switch"><input id="block-posting" type="checkbox" ${设置.blockPosting ? "checked" : ""}><span></span><b>阻止当前浏览器发帖</b></label><p>开启后会在页面环境拦截 Fetch 和 XMLHttpRequest 的 POST /posts。关闭时，成功发帖的响应会自动写入待定队列。</p></article>`;
+  function 渲染设置(设置: 设置, 待定数量: number): string {
+    return `<div class="settings-stack">
+      <article class="card narrow"><h2>发帖保护</h2><label class="switch"><input id="block-posting" type="checkbox" ${设置.blockPosting ? "checked" : ""}><span></span><b>阻止当前浏览器发帖</b></label><p>开启后会在页面环境拦截 Fetch 和 XMLHttpRequest 的 POST /posts。关闭时，成功发帖的响应会自动写入待定队列。</p></article>
+      <article class="card narrow"><h2>远程自动审核</h2>
+        <p class="warning">启动后会把帖子和话题的完整 JSON 发送到你指定的 endpoint。请只使用你信任的服务；返回结果只负责移动队列，不会立即执行编辑或删除。</p>
+        <label class="script-label">HTTP(S) endpoint</label><input id="remote-endpoint" type="url" autocomplete="off" placeholder="https://example.com/review" value="${转义HTML(设置.remoteEndpoint)}">
+        <div class="form-row remote-form">
+          <label>请求顺序<select id="remote-order"><option value="从新到旧" ${设置.remoteOrder === "从新到旧" ? "selected" : ""}>从新到旧</option><option value="从旧到新" ${设置.remoteOrder === "从旧到新" ? "selected" : ""}>从旧到新</option></select></label>
+          <label>失败策略<select id="remote-failure-policy"><option value="停止" ${设置.remoteFailurePolicy === "停止" ? "selected" : ""}>立即停止</option><option value="跳过" ${设置.remoteFailurePolicy === "跳过" ? "selected" : ""}>跳过并继续</option><option value="重试后停止" ${设置.remoteFailurePolicy === "重试后停止" ? "selected" : ""}>重试耗尽后停止</option><option value="重试后跳过" ${设置.remoteFailurePolicy === "重试后跳过" ? "selected" : ""}>重试耗尽后跳过</option></select></label>
+          <label>重试次数<input id="remote-retry-count" type="number" min="0" max="10" value="${设置.remoteRetryCount}"></label>
+          <label>请求间隔（ms）<input id="remote-delay" type="number" min="0" value="${设置.remoteDelayMs}"></label>
+          <label>endpoint 超时（ms）<input id="remote-timeout" type="number" min="1000" max="300000" value="${设置.remoteTimeoutMs}"></label>
+        </div>
+        <p>待定队列当前有 ${待定数量} 条。endpoint 的响应 ID 必须与请求 ID 完全一致；否则按请求失败处理。<code>ignore</code> 会让帖子留在待定队列，但本轮不再重复请求。</p>
+        <div class="actions"><button data-action="save-remote-settings">保存配置</button><button class="primary" data-action="start-remote-review" ${远程审核器实例.运行中 || !待定数量 ? "disabled" : ""}>开始远程审核</button><button data-action="stop-remote-review" ${远程审核器实例.运行中 ? "" : "disabled"}>停止</button></div>
+        <label class="script-label">提供给 endpoint 后方 LLM 的协议提示词</label>
+        <textarea id="remote-prompt" class="code-editor remote-prompt" readonly>${转义HTML(远程审核提示词)}</textarea>
+        <div class="actions"><button data-action="copy-remote-prompt">复制提示词</button></div>
+      </article>
+    </div>`;
   }
 
   function 帖子卡片(帖子: 帖子记录): string {
@@ -239,6 +267,10 @@ export function 启动管理页(用户名: string): void {
 
   function 空状态(标题: string, 说明: string): string {
     return `<div class="empty"><h3>${转义HTML(标题)}</h3><p>${转义HTML(说明)}</p></div>`;
+  }
+
+  function 渲染审核顺序选择(顺序: 审核顺序): string {
+    return `<label class="order-control">审核顺序<select id="review-order"><option value="从新到旧" ${顺序 === "从新到旧" ? "selected" : ""}>从新到旧</option><option value="从旧到新" ${顺序 === "从旧到新" ? "selected" : ""}>从旧到新</option></select></label>`;
   }
 
   async function 处理点击(event: MouseEvent): Promise<void> {
@@ -288,8 +320,8 @@ export function 启动管理页(用户名: string): void {
     if (action === "preview-edit") return void 运行编辑预览();
     if (action === "start-edit") {
       if (!确认执行编辑脚本()) return;
-      if (删帖器实例.运行中) {
-        运行状态 = "删帖正在运行，请先停止删帖。";
+      if (删帖器实例.运行中 || 远程审核器实例.运行中) {
+        运行状态 = "删帖或远程审核正在运行，请先停止对应任务。";
         return void 渲染();
       }
       try {
@@ -303,8 +335,8 @@ export function 启动管理页(用户名: string): void {
     }
     if (action === "stop-edit") return 编辑器实例.停止();
     if (action === "start-delete") {
-      if (编辑器实例.运行中) {
-        运行状态 = "批量编辑正在运行，请先停止编辑。";
+      if (编辑器实例.运行中 || 远程审核器实例.运行中) {
+        运行状态 = "批量编辑或远程审核正在运行，请先停止对应任务。";
         return void 渲染();
       }
       保存删帖表单();
@@ -312,14 +344,65 @@ export function 启动管理页(用户名: string): void {
       return;
     }
     if (action === "stop-delete") return 删帖器实例.停止();
-    if (action === "start-sync") return void 开始同步();
+    if (action === "start-sync") {
+      if (远程审核器实例.运行中) {
+        运行状态 = "远程审核正在运行，请先停止远程审核。";
+        return void 渲染();
+      }
+      return void 开始同步();
+    }
     if (action === "stop-sync") return 同步控制器?.abort();
+    if (action === "clear-fetch-range") {
+      保存设置({ ...读取设置(), fetchMinId: "", fetchMaxId: "" });
+      运行状态 = "已清空帖子 ID 范围；下次同步不会按 ID 过滤。";
+      return void 渲染();
+    }
+    if (action === "save-remote-settings") {
+      try {
+        保存远程审核表单(false);
+        运行状态 = "远程审核配置已保存。";
+      } catch (错误) {
+        运行状态 = `保存远程审核配置失败：${提取错误(错误)}`;
+      }
+      return void 渲染();
+    }
+    if (action === "start-remote-review") {
+      if (删帖器实例.运行中 || 编辑器实例.运行中 || 同步控制器) {
+        运行状态 = "当前有删帖、编辑或同步任务正在运行，请先停止。";
+        return void 渲染();
+      }
+      try {
+        const 新设置 = 保存远程审核表单(true);
+        void 远程审核器实例.开始(新设置);
+      } catch (错误) {
+        运行状态 = `无法启动远程审核：${提取错误(错误)}`;
+        void 渲染();
+      }
+      return;
+    }
+    if (action === "stop-remote-review") return 远程审核器实例.停止();
+    if (action === "copy-remote-prompt") {
+      try {
+        await navigator.clipboard.writeText(远程审核提示词);
+        运行状态 = "远程审核协议提示词已复制。";
+      } catch (错误) {
+        运行状态 = `复制失败：${提取错误(错误)}`;
+      }
+      return void 渲染();
+    }
   }
 
   async function 处理设置变更(event: Event): Promise<void> {
     const 输入 = event.target;
-    if (!(输入 instanceof HTMLInputElement)) return;
-    if (输入.id === "block-posting") {
+    if (!(输入 instanceof HTMLInputElement || 输入 instanceof HTMLSelectElement)) return;
+    if (输入.id === "review-order") {
+      const reviewOrder: 审核顺序 = 输入.value === "从旧到新" ? "从旧到新" : "从新到旧";
+      审核页码 = 1;
+      保存设置({ ...读取设置(), reviewOrder });
+      运行状态 = `审核顺序已切换为${reviewOrder}。`;
+      return void 渲染();
+    }
+    if (输入.id === "block-posting" && 输入 instanceof HTMLInputElement) {
       保存设置({ ...读取设置(), blockPosting: 输入.checked });
       await 写日志(用户名, `发帖拦截已${输入.checked ? "开启" : "关闭"}。`);
     }
@@ -350,6 +433,34 @@ export function 启动管理页(用户名: string): void {
       editDelayMs: 数值限制(输入值("edit-delay"), 旧设置.editDelayMs, 500, 86_400_000),
     });
     return { 正文脚本, 标题脚本 };
+  }
+
+  function 保存远程审核表单(必须填写Endpoint: boolean): 设置 {
+    const 旧设置 = 读取设置();
+    const endpoint输入 = 输入值("remote-endpoint").trim();
+    if (必须填写Endpoint && !endpoint输入) throw new Error("请填写 endpoint。");
+    let endpoint = endpoint输入;
+    if (endpoint输入) {
+      const 地址 = new URL(endpoint输入, location.href);
+      if (地址.protocol !== "http:" && 地址.protocol !== "https:") throw new Error("endpoint 只支持 HTTP 或 HTTPS。");
+      endpoint = 地址.href;
+    }
+    const 顺序输入 = 输入值("remote-order");
+    const remoteOrder: 审核顺序 = 顺序输入 === "从旧到新" ? "从旧到新" : "从新到旧";
+    const 策略输入 = 输入值("remote-failure-policy");
+    const remoteFailurePolicy: 远程审核失败策略 =
+      策略输入 === "跳过" || 策略输入 === "重试后停止" || 策略输入 === "重试后跳过" ? 策略输入 : "停止";
+    const 新设置: 设置 = {
+      ...旧设置,
+      remoteEndpoint: endpoint,
+      remoteOrder,
+      remoteFailurePolicy,
+      remoteRetryCount: 数值限制(输入值("remote-retry-count"), 旧设置.remoteRetryCount, 0, 10),
+      remoteDelayMs: 数值限制(输入值("remote-delay"), 旧设置.remoteDelayMs, 0, 86_400_000),
+      remoteTimeoutMs: 数值限制(输入值("remote-timeout"), 旧设置.remoteTimeoutMs, 1_000, 300_000),
+    };
+    保存设置(新设置);
+    return 新设置;
   }
 
   function 确认执行编辑脚本(): boolean {
@@ -429,7 +540,8 @@ export function 启动管理页(用户名: string): void {
     const delay = 数值限制(输入值("fetch-delay"), 旧设置.fetchDelayMs, 0, 60_000);
     const 类型输入 = 输入值("fetch-type");
     const type: 同步类型 = 类型输入 === "回帖" || 类型输入 === "话题" ? 类型输入 : "全部";
-    const target: 同步目标 = 输入值("fetch-target") === "待编辑" ? "待编辑" : "待定";
+    const 目标输入 = 输入值("fetch-target");
+    const target: 同步目标 = 目标输入 === "待编辑" || 目标输入 === "重新待定" ? 目标输入 : "待定";
     保存设置({
       ...旧设置,
       fetchMinId: min,
@@ -441,7 +553,7 @@ export function 启动管理页(用户名: string): void {
     同步控制器 = new AbortController();
     void 渲染();
     try {
-      const 数量 = await 同步所有帖子({
+      const 结果 = await 同步所有帖子({
         username: 用户名,
         minId,
         maxId,
@@ -454,8 +566,13 @@ export function 启动管理页(用户名: string): void {
           void 渲染();
         },
       });
-      const 数据库总数 = (await 读取帖子(用户名)).length;
-      运行状态 = `同步完成，API 返回 ${数量} 条，数据库共 ${数据库总数} 条。`;
+      const 全部帖子 = await 读取帖子(用户名);
+      const 命中编号 = new Set(结果.命中编号);
+      const 目标状态 = target === "重新待定" ? "待定" : target;
+      const 位于目标队列 = 全部帖子.filter((帖子) => 命中编号.has(帖子.id) && 帖子.status === 目标状态).length;
+      const 保留旧状态 = Math.max(0, 结果.命中条数 - 位于目标队列);
+      const 分类文案 = 结果.分类.map((统计) => `${统计.类型} ${统计.接口条数}/${统计.命中条数}`).join("，");
+      运行状态 = `同步完成：接口读取 ${结果.接口条数} 条（${分类文案}），ID 范围及去重后命中 ${结果.命中条数} 条；当前位于${目标状态}队列 ${位于目标队列} 条${保留旧状态 ? `，另有 ${保留旧状态} 条保留原决定` : ""}。数据库共 ${全部帖子.length} 条。`;
     } catch (错误) {
       运行状态 =
         错误 instanceof DOMException && 错误.name === "AbortError" ? "同步已停止。" : `同步失败：${提取错误(错误)}`;
@@ -470,15 +587,24 @@ export function 启动管理页(用户名: string): void {
       (document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null)?.value ?? ""
     );
   }
+
+  function 排序审核帖子(帖子: 帖子记录[], 顺序: 审核顺序): 帖子记录[] {
+    const 方向 = 顺序 === "从旧到新" ? 1 : -1;
+    return [...帖子].sort((左, 右) => {
+      const 左时间 = Date.parse(左.createdAt) || 0;
+      const 右时间 = Date.parse(右.createdAt) || 0;
+      return 方向 * (左时间 - 右时间 || 左.id - 右.id);
+    });
+  }
 }
 
 const 管理页样式 = `
   #shantie-manager, #shantie-manager *{box-sizing:border-box}body{margin:0!important;background:#f5f7fb!important;color:#172033!important;font:14px/1.55 system-ui,-apple-system,sans-serif!important}
   #shantie-manager{position:fixed;inset:0;z-index:2147483647;overflow:auto;background:#f5f7fb}.topbar{display:flex;align-items:center;justify-content:space-between;padding:24px max(24px,calc((100vw - 1180px)/2));background:#10233f;color:white}.topbar h1{margin:0;font-size:24px}.topbar p{margin:4px 0 0;color:#aec3dd}.forum-link{color:white;text-decoration:none;border:1px solid #57708e;border-radius:9px;padding:8px 12px}
   .tabs{position:sticky;top:0;z-index:2;display:flex;gap:4px;padding:10px max(24px,calc((100vw - 1180px)/2));overflow:auto;background:white;border-bottom:1px solid #dce3ed}.tab{white-space:nowrap;border:0;border-radius:8px;padding:10px 14px;background:transparent;color:#52647a;cursor:pointer}.tab.active{background:#e8f0ff;color:#1754b5}.tab b{display:inline-block;margin-left:5px;padding:1px 7px;border-radius:999px;background:#dce9ff}
-  .content{max-width:1180px;margin:0 auto;padding:24px}.section-head{display:flex;justify-content:space-between;margin-bottom:14px}.section-head.secondary{margin-top:30px}.section-head h2,.card h2{margin:0 0 5px;font-size:18px}.section-head p,.card p{margin:0;color:#66758a}.grid.two{display:grid;grid-template-columns:1fr 1.5fr;gap:16px;margin-bottom:24px}.card,.post-card,.empty{padding:18px;border:1px solid #dce3ed;border-radius:13px;background:white;box-shadow:0 3px 14px rgba(33,51,78,.04)}.card.narrow{max-width:800px;margin:auto}
+  .content{max-width:1180px;margin:0 auto;padding:24px}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.section-head.secondary{margin-top:30px}.section-head h2,.card h2{margin:0 0 5px;font-size:18px}.section-head p,.card p{margin:0;color:#66758a}.grid.two{display:grid;grid-template-columns:1fr 1.5fr;gap:16px;margin-bottom:24px}.card,.post-card,.empty{padding:18px;border:1px solid #dce3ed;border-radius:13px;background:white;box-shadow:0 3px 14px rgba(33,51,78,.04)}.card.narrow{max-width:800px;margin:auto}.order-control{flex:0 0 150px;color:#5d6d82;font-size:12px}.order-control select{margin-top:5px}
   textarea,input,select{width:100%;border:1px solid #c9d3e0;border-radius:8px;padding:9px 10px;background:white;color:#172033}textarea{height:90px;margin:10px 0}.form-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.form-row label{color:#5d6d82;font-size:12px}.form-row input,.form-row select{margin-top:5px}.actions,.post-actions,.focus-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}button{border:1px solid #c9d3e0;border-radius:8px;padding:9px 13px;background:white;cursor:pointer}button.primary{border-color:#2563eb;background:#2563eb;color:white}button.danger{border-color:#dc2626;background:#dc2626;color:white}button.keep{border-color:#16845b;background:#16845b;color:white}button.edit{border-color:#7c3aed;background:#7c3aed;color:white}button:disabled{opacity:.45;cursor:not-allowed}
   .segmented{display:flex;gap:15px;margin:10px 0}.segmented label{display:flex;align-items:center;gap:5px}.segmented input,.switch input,.danger-confirm input{width:auto}.pagination{display:flex;align-items:center;justify-content:center;gap:14px;margin:0 0 14px}.pagination+.post-list{margin-bottom:14px}.post-list,.compact-list,.logs{display:grid;gap:12px}.post-meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:#718096;font-size:12px}.post-meta a{font-weight:700;color:#1754b5}.post-meta span{font-weight:600;color:#34445a}.post-meta em{margin-left:auto}.post-card pre{margin:12px 0 0;white-space:pre-wrap;word-break:break-word;font:14px/1.6 system-ui;color:#26364b}.error-text{color:#b42318}.compact-list .post-card pre{max-height:90px;overflow:auto}.empty{text-align:center;color:#718096}.empty h3{margin:0;color:#34445a}.empty p{margin:5px 0 0}.log{display:flex;gap:16px;padding:11px 14px;border-radius:8px;background:white;border:1px solid #e0e6ee}.log time{flex:0 0 180px;color:#718096}.log.error span{color:#b42318}.switch{display:flex;gap:10px;align-items:center;margin:18px 0}.switch b{font-size:16px}.loading{padding:60px;text-align:center}
-  .focus-shell{max-width:900px;margin:auto}.focus-card{padding:28px}.focus-card pre{min-height:240px;font-size:17px;line-height:1.8}.focus-actions{justify-content:center;margin-top:24px}.focus-actions button{min-width:130px;padding:13px 20px;font-size:15px}.editor-card{max-width:1040px;margin:auto}.editor-card .code-editor{height:280px;background:#111827;color:#e5e7eb;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.editor-card .title-editor{height:190px}.script-label{display:block;margin-top:16px;font-weight:700}.warning{margin:10px 0!important;padding:12px;border-left:4px solid #dc2626;background:#fff1f2;color:#9f1239!important}.danger-confirm{display:flex;align-items:center;gap:8px;color:#9f1239}.edit-form{grid-template-columns:minmax(180px,260px)}.sync-form{grid-template-columns:repeat(5,1fr)}.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}.preview-grid>div{min-width:0;padding:14px;border:1px solid #dce3ed;border-radius:10px}.preview-grid h3{margin:0}.preview-grid pre{max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word}.muted{margin-top:15px!important;color:#718096!important}
+  .focus-shell{max-width:900px;margin:auto}.focus-card{padding:28px}.focus-card pre{min-height:240px;font-size:17px;line-height:1.8}.focus-actions{justify-content:center;margin-top:24px}.focus-actions button{min-width:130px;padding:13px 20px;font-size:15px}.editor-card{max-width:1040px;margin:auto}.editor-card .code-editor{height:280px;background:#111827;color:#e5e7eb;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.editor-card .title-editor{height:190px}.script-label{display:block;margin-top:16px;font-weight:700}.warning{margin:10px 0!important;padding:12px;border-left:4px solid #dc2626;background:#fff1f2;color:#9f1239!important}.danger-confirm{display:flex;align-items:center;gap:8px;color:#9f1239}.edit-form{grid-template-columns:minmax(180px,260px)}.sync-form,.remote-form{grid-template-columns:repeat(5,1fr)}.settings-stack{display:grid;gap:18px}.settings-stack .card.narrow{width:100%}.remote-prompt{height:360px;background:#111827;color:#e5e7eb;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}.preview-grid>div{min-width:0;padding:14px;border:1px solid #dce3ed;border-radius:10px}.preview-grid h3{margin:0}.preview-grid pre{max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word}.muted{margin-top:15px!important;color:#718096!important}
   @media(max-width:760px){.grid.two,.form-row,.preview-grid{grid-template-columns:1fr}.topbar{padding:18px}.content{padding:14px}.tabs{padding:8px 14px}.post-meta em{margin-left:0}.log{display:block}.log time{display:block;margin-bottom:4px}.focus-card{padding:18px}.focus-card pre{min-height:160px}.focus-actions button{flex:1;min-width:90px}}
 `;

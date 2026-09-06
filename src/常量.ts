@@ -10,6 +10,7 @@ export const 通信频道名 = "shantie-v3-events";
 
 export const 默认设置: 设置 = {
   blockPosting: false,
+  reviewOrder: "从新到旧",
   deleteMode: "批量",
   singleDelayMs: 60_000,
   batchDelayMs: 5_000,
@@ -22,4 +23,10 @@ export const 默认设置: 设置 = {
   fetchTarget: "待定",
   fetchMinId: "",
   fetchMaxId: "",
+  remoteEndpoint: "",
+  remoteOrder: "从新到旧",
+  remoteFailurePolicy: "停止",
+  remoteRetryCount: 2,
+  remoteDelayMs: 1_000,
+  remoteTimeoutMs: 30_000,
 };

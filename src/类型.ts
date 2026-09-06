@@ -3,7 +3,9 @@ export type 帖子来源 = "同步" | "发帖监听" | "手动" | "旧队列";
 export type 删帖方式 = "逐帖" | "批量";
 export type 帖子种类 = "回帖" | "话题";
 export type 同步类型 = 帖子种类 | "全部";
-export type 同步目标 = "待定" | "待编辑";
+export type 同步目标 = "待定" | "重新待定" | "待编辑";
+export type 审核顺序 = "从新到旧" | "从旧到新";
+export type 远程审核失败策略 = "停止" | "跳过" | "重试后停止" | "重试后跳过";
 
 export interface 帖子记录 {
   key: string;
@@ -40,6 +42,7 @@ export interface 日志记录 {
 
 export interface 设置 {
   blockPosting: boolean;
+  reviewOrder: 审核顺序;
   deleteMode: 删帖方式;
   singleDelayMs: number;
   batchDelayMs: number;
@@ -52,10 +55,16 @@ export interface 设置 {
   fetchTarget: 同步目标;
   fetchMinId: string;
   fetchMaxId: string;
+  remoteEndpoint: string;
+  remoteOrder: 审核顺序;
+  remoteFailurePolicy: 远程审核失败策略;
+  remoteRetryCount: number;
+  remoteDelayMs: number;
+  remoteTimeoutMs: number;
 }
 
 export interface 用户动态 {
-  post_id?: number;
+  post_id?: number | null;
   username?: string;
   excerpt?: string;
   created_at?: string;
