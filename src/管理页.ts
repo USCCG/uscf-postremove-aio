@@ -275,10 +275,28 @@ export function 启动管理页(用户名: string): void {
     for (const 链接 of 根.querySelectorAll<HTMLAnchorElement>(".post-content a")) {
       链接.target = "_blank";
       链接.rel = "noopener noreferrer";
+      if (是缺少预览的图片链接(链接)) {
+        const 图片 = document.createElement("img");
+        图片.src = 链接.href;
+        图片.alt = 链接.title || 链接.textContent?.trim() || "帖子图片";
+        图片.loading = "lazy";
+        图片.decoding = "async";
+        链接.replaceChildren(图片);
+      }
     }
     for (const 图片 of 根.querySelectorAll<HTMLImageElement>(".post-content img")) {
       图片.loading = "lazy";
       图片.decoding = "async";
+    }
+  }
+
+  function 是缺少预览的图片链接(链接: HTMLAnchorElement): boolean {
+    if (链接.querySelector("img")) return false;
+    if (链接.classList.contains("lightbox")) return true;
+    try {
+      return /\.(?:avif|gif|jpe?g|png|webp)(?:$|[?#])/i.test(new URL(链接.href, location.href).pathname);
+    } catch {
+      return false;
     }
   }
 
