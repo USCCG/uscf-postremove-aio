@@ -5,7 +5,7 @@ import { 保存设置, 读取设置 } from "./设置";
 import { 保存帖子, 写日志, 更新帖子状态, 监听数据变化, 读取帖子, 读取日志 } from "./存储";
 import { 同步所有帖子 } from "./帖子同步";
 import type { 审核顺序, 同步目标, 同步类型, 帖子记录, 帖子状态, 设置, 远程审核失败策略 } from "./类型";
-import { 去除HTML, 提取错误, 数值限制, 解析帖子编号, 转义HTML } from "./工具";
+import { 提取错误, 数值限制, 解析帖子编号, 转义HTML } from "./工具";
 import { 远程审核器, 远程审核提示词 } from "./远程审核";
 
 type 页签 = "review" | "focus" | "decided" | "edit" | "delete" | "sync" | "logs" | "settings";
@@ -80,6 +80,7 @@ export function 启动管理页(用户名: string): void {
         ${页签按钮("settings", `设置${设置.blockPosting ? " · 已拦截发帖" : ""}`)}
       </nav>
       <section class="content">${渲染页签(待定, 已处理, 待编辑, 编辑失败, 待删除, 失败, 日志, 设置)}</section>`;
+    准备帖子HTML();
   }
 
   function 页签按钮(页签: 页签, 文案: string): string {
@@ -138,12 +139,11 @@ export function 启动管理页(用户名: string): void {
     const 当前帖子 = 帖子[0];
     if (!当前帖子)
       return `<div class="focus-shell">${空状态("待定队列已经审核完", "可以去“获取帖子”同步历史帖，或返回普通审核页查看保留项目。")}</div>`;
-    const 内容 = 当前帖子.raw || 去除HTML(当前帖子.cooked) || "（未获取到内容）";
     return `<div class="focus-shell">
       <div class="section-head"><div><h2>沉浸审核</h2><p>一次只处理一条；作出决定后按${顺序}显示下一条。还剩 ${帖子.length} 条。</p></div>${渲染审核顺序选择(顺序)}</div>
       <article class="post-card focus-card">
         <div class="post-meta"><a href="${转义HTML(当前帖子.postUrl || `/posts/${当前帖子.id}`)}" target="_blank" rel="noopener">#${当前帖子.id}</a><span>${转义HTML(当前帖子.topicTitle)}</span><time>${当前帖子.createdAt ? new Date(当前帖子.createdAt).toLocaleString() : ""}</time></div>
-        <pre>${转义HTML(内容)}</pre>
+        ${渲染帖子正文(当前帖子)}
         <div class="focus-actions">
           <button class="edit" data-decision="待编辑" data-id="${当前帖子.id}">编辑</button>
           <button class="danger" data-decision="待删除" data-id="${当前帖子.id}">删除</button>
@@ -261,8 +261,25 @@ export function 启动管理页(用户名: string): void {
   }
 
   function 帖子卡片(帖子: 帖子记录): string {
-    const 内容 = 帖子.raw || 去除HTML(帖子.cooked) || "（未获取到内容）";
-    return `<article class="post-card"><div class="post-meta"><a href="${转义HTML(帖子.postUrl || `/posts/${帖子.id}`)}" target="_blank" rel="noopener">#${帖子.id}</a><span>${转义HTML(帖子.topicTitle)}</span><time>${帖子.createdAt ? new Date(帖子.createdAt).toLocaleString() : ""}</time><em>${转义HTML(帖子.recordType ?? (帖子.postNumber === 1 ? "话题" : "回帖"))} · ${转义HTML(帖子.source)} · ${转义HTML(帖子.status)}</em></div><pre>${转义HTML(内容)}</pre>${帖子.lastError ? `<p class="error-text">${转义HTML(帖子.lastError)}</p>` : ""}<div class="post-actions"><button class="edit" data-decision="待编辑" data-id="${帖子.id}">编辑</button><button class="danger" data-decision="待删除" data-id="${帖子.id}">删除</button><button class="keep" data-decision="保留" data-id="${帖子.id}">保留</button>${帖子.status !== "待定" ? `<button data-decision="待定" data-id="${帖子.id}">移回待定</button>` : ""}</div></article>`;
+    return `<article class="post-card"><div class="post-meta"><a href="${转义HTML(帖子.postUrl || `/posts/${帖子.id}`)}" target="_blank" rel="noopener">#${帖子.id}</a><span>${转义HTML(帖子.topicTitle)}</span><time>${帖子.createdAt ? new Date(帖子.createdAt).toLocaleString() : ""}</time><em>${转义HTML(帖子.recordType ?? (帖子.postNumber === 1 ? "话题" : "回帖"))} · ${转义HTML(帖子.source)} · ${转义HTML(帖子.status)}</em></div>${渲染帖子正文(帖子)}${帖子.lastError ? `<p class="error-text">${转义HTML(帖子.lastError)}</p>` : ""}<div class="post-actions"><button class="edit" data-decision="待编辑" data-id="${帖子.id}">编辑</button><button class="danger" data-decision="待删除" data-id="${帖子.id}">删除</button><button class="keep" data-decision="保留" data-id="${帖子.id}">保留</button>${帖子.status !== "待定" ? `<button data-decision="待定" data-id="${帖子.id}">移回待定</button>` : ""}</div></article>`;
+  }
+
+  function 渲染帖子正文(帖子: 帖子记录): string {
+    // cooked 来自已登录的论坛接口；按用户要求视为可信 HTML，并保留图片、链接和论坛排版。
+    if (帖子.cooked.trim()) return `<div class="post-content">${帖子.cooked}</div>`;
+    const 原文 = 帖子.raw || "（未获取到内容）";
+    return `<pre class="post-content-raw">${转义HTML(原文)}</pre>`;
+  }
+
+  function 准备帖子HTML(): void {
+    for (const 链接 of 根.querySelectorAll<HTMLAnchorElement>(".post-content a")) {
+      链接.target = "_blank";
+      链接.rel = "noopener noreferrer";
+    }
+    for (const 图片 of 根.querySelectorAll<HTMLImageElement>(".post-content img")) {
+      图片.loading = "lazy";
+      图片.decoding = "async";
+    }
   }
 
   function 空状态(标题: string, 说明: string): string {
@@ -604,7 +621,7 @@ const 管理页样式 = `
   .tabs{position:sticky;top:0;z-index:2;display:flex;gap:4px;padding:10px max(24px,calc((100vw - 1180px)/2));overflow:auto;background:white;border-bottom:1px solid #dce3ed}.tab{white-space:nowrap;border:0;border-radius:8px;padding:10px 14px;background:transparent;color:#52647a;cursor:pointer}.tab.active{background:#e8f0ff;color:#1754b5}.tab b{display:inline-block;margin-left:5px;padding:1px 7px;border-radius:999px;background:#dce9ff}
   .content{max-width:1180px;margin:0 auto;padding:24px}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.section-head.secondary{margin-top:30px}.section-head h2,.card h2{margin:0 0 5px;font-size:18px}.section-head p,.card p{margin:0;color:#66758a}.grid.two{display:grid;grid-template-columns:1fr 1.5fr;gap:16px;margin-bottom:24px}.card,.post-card,.empty{padding:18px;border:1px solid #dce3ed;border-radius:13px;background:white;box-shadow:0 3px 14px rgba(33,51,78,.04)}.card.narrow{max-width:800px;margin:auto}.order-control{flex:0 0 150px;color:#5d6d82;font-size:12px}.order-control select{margin-top:5px}
   textarea,input,select{width:100%;border:1px solid #c9d3e0;border-radius:8px;padding:9px 10px;background:white;color:#172033}textarea{height:90px;margin:10px 0}.form-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.form-row label{color:#5d6d82;font-size:12px}.form-row input,.form-row select{margin-top:5px}.actions,.post-actions,.focus-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}button{border:1px solid #c9d3e0;border-radius:8px;padding:9px 13px;background:white;cursor:pointer}button.primary{border-color:#2563eb;background:#2563eb;color:white}button.danger{border-color:#dc2626;background:#dc2626;color:white}button.keep{border-color:#16845b;background:#16845b;color:white}button.edit{border-color:#7c3aed;background:#7c3aed;color:white}button:disabled{opacity:.45;cursor:not-allowed}
-  .segmented{display:flex;gap:15px;margin:10px 0}.segmented label{display:flex;align-items:center;gap:5px}.segmented input,.switch input,.danger-confirm input{width:auto}.pagination{display:flex;align-items:center;justify-content:center;gap:14px;margin:0 0 14px}.pagination+.post-list{margin-bottom:14px}.post-list,.compact-list,.logs{display:grid;gap:12px}.post-meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:#718096;font-size:12px}.post-meta a{font-weight:700;color:#1754b5}.post-meta span{font-weight:600;color:#34445a}.post-meta em{margin-left:auto}.post-card pre{margin:12px 0 0;white-space:pre-wrap;word-break:break-word;font:14px/1.6 system-ui;color:#26364b}.error-text{color:#b42318}.compact-list .post-card pre{max-height:90px;overflow:auto}.empty{text-align:center;color:#718096}.empty h3{margin:0;color:#34445a}.empty p{margin:5px 0 0}.log{display:flex;gap:16px;padding:11px 14px;border-radius:8px;background:white;border:1px solid #e0e6ee}.log time{flex:0 0 180px;color:#718096}.log.error span{color:#b42318}.switch{display:flex;gap:10px;align-items:center;margin:18px 0}.switch b{font-size:16px}.loading{padding:60px;text-align:center}
-  .focus-shell{max-width:900px;margin:auto}.focus-card{padding:28px}.focus-card pre{min-height:240px;font-size:17px;line-height:1.8}.focus-actions{justify-content:center;margin-top:24px}.focus-actions button{min-width:130px;padding:13px 20px;font-size:15px}.editor-card{max-width:1040px;margin:auto}.editor-card .code-editor{height:280px;background:#111827;color:#e5e7eb;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.editor-card .title-editor{height:190px}.script-label{display:block;margin-top:16px;font-weight:700}.warning{margin:10px 0!important;padding:12px;border-left:4px solid #dc2626;background:#fff1f2;color:#9f1239!important}.danger-confirm{display:flex;align-items:center;gap:8px;color:#9f1239}.edit-form{grid-template-columns:minmax(180px,260px)}.sync-form,.remote-form{grid-template-columns:repeat(5,1fr)}.settings-stack{display:grid;gap:18px}.settings-stack .card.narrow{width:100%}.remote-prompt{height:360px;background:#111827;color:#e5e7eb;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}.preview-grid>div{min-width:0;padding:14px;border:1px solid #dce3ed;border-radius:10px}.preview-grid h3{margin:0}.preview-grid pre{max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word}.muted{margin-top:15px!important;color:#718096!important}
-  @media(max-width:760px){.grid.two,.form-row,.preview-grid{grid-template-columns:1fr}.topbar{padding:18px}.content{padding:14px}.tabs{padding:8px 14px}.post-meta em{margin-left:0}.log{display:block}.log time{display:block;margin-bottom:4px}.focus-card{padding:18px}.focus-card pre{min-height:160px}.focus-actions button{flex:1;min-width:90px}}
+  .segmented{display:flex;gap:15px;margin:10px 0}.segmented label{display:flex;align-items:center;gap:5px}.segmented input,.switch input,.danger-confirm input{width:auto}.pagination{display:flex;align-items:center;justify-content:center;gap:14px;margin:0 0 14px}.pagination+.post-list{margin-bottom:14px}.post-list,.compact-list,.logs{display:grid;gap:12px}.post-meta{display:flex;gap:10px;align-items:center;flex-wrap:wrap;color:#718096;font-size:12px}.post-meta a{font-weight:700;color:#1754b5}.post-meta span{font-weight:600;color:#34445a}.post-meta em{margin-left:auto}.post-content,.post-content-raw{margin:12px 0 0;color:#26364b;font:14px/1.6 system-ui;overflow-wrap:anywhere}.post-content-raw{white-space:pre-wrap}.post-content img{max-width:100%;height:auto;border-radius:8px}.post-content pre{max-width:100%;overflow:auto;padding:10px;border-radius:8px;background:#f3f5f8;white-space:pre-wrap}.post-content blockquote{margin:12px 0;padding:4px 14px;border-left:4px solid #c9d3e0;color:#52647a}.post-content a{color:#1754b5}.error-text{color:#b42318}.compact-list .post-content,.compact-list .post-content-raw{max-height:160px;overflow:auto}.empty{text-align:center;color:#718096}.empty h3{margin:0;color:#34445a}.empty p{margin:5px 0 0}.log{display:flex;gap:16px;padding:11px 14px;border-radius:8px;background:white;border:1px solid #e0e6ee}.log time{flex:0 0 180px;color:#718096}.log.error span{color:#b42318}.switch{display:flex;gap:10px;align-items:center;margin:18px 0}.switch b{font-size:16px}.loading{padding:60px;text-align:center}
+  .focus-shell{max-width:900px;margin:auto}.focus-card{padding:28px}.focus-card .post-content,.focus-card .post-content-raw{min-height:240px;font-size:17px;line-height:1.8}.focus-actions{justify-content:center;margin-top:24px}.focus-actions button{min-width:130px;padding:13px 20px;font-size:15px}.editor-card{max-width:1040px;margin:auto}.editor-card .code-editor{height:280px;background:#111827;color:#e5e7eb;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.editor-card .title-editor{height:190px}.script-label{display:block;margin-top:16px;font-weight:700}.warning{margin:10px 0!important;padding:12px;border-left:4px solid #dc2626;background:#fff1f2;color:#9f1239!important}.danger-confirm{display:flex;align-items:center;gap:8px;color:#9f1239}.edit-form{grid-template-columns:minmax(180px,260px)}.sync-form,.remote-form{grid-template-columns:repeat(5,1fr)}.settings-stack{display:grid;gap:18px}.settings-stack .card.narrow{width:100%}.remote-prompt{height:360px;background:#111827;color:#e5e7eb;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}.preview-grid>div{min-width:0;padding:14px;border:1px solid #dce3ed;border-radius:10px}.preview-grid h3{margin:0}.preview-grid pre{max-height:360px;overflow:auto;white-space:pre-wrap;word-break:break-word}.muted{margin-top:15px!important;color:#718096!important}
+  @media(max-width:760px){.grid.two,.form-row,.preview-grid{grid-template-columns:1fr}.topbar{padding:18px}.content{padding:14px}.tabs{padding:8px 14px}.post-meta em{margin-left:0}.log{display:block}.log time{display:block;margin-bottom:4px}.focus-card{padding:18px}.focus-card .post-content,.focus-card .post-content-raw{min-height:160px}.focus-actions button{flex:1;min-width:90px}}
 `;
